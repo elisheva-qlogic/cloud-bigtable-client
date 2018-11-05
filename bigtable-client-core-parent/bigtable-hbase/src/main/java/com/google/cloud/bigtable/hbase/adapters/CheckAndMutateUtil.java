@@ -20,6 +20,7 @@ import com.google.bigtable.v2.CheckAndMutateRowResponse;
 import com.google.bigtable.v2.Mutation;
 import com.google.bigtable.v2.ReadRowsRequest;
 import com.google.bigtable.v2.RowFilter;
+import com.google.cloud.bigtable.data.v2.models.ConditionalRowMutation;
 import com.google.cloud.bigtable.hbase.adapters.read.ReadHooks;
 import com.google.cloud.bigtable.hbase.filter.TimestampRangeFilter;
 import com.google.common.base.Function;
@@ -37,9 +38,7 @@ import org.apache.hadoop.hbase.filter.FilterList;
 import org.apache.hadoop.hbase.filter.ValueFilter;
 
 import javax.annotation.Nullable;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
 
 public class CheckAndMutateUtil {
 
@@ -86,7 +85,8 @@ public class CheckAndMutateUtil {
     private final HBaseRequestAdapter hbaseAdapter;
     private final CheckAndMutateRowRequest.Builder requestBuilder;
 
-    private final List<Mutation> mutations = new ArrayList<>();
+    private final com.google.cloud.bigtable.data.v2.models.Mutation mutations = com.google.cloud.bigtable.data.v2.models.Mutation
+        .create();
 
     private final byte[] row;
     private final byte[] family;
@@ -177,31 +177,47 @@ public class CheckAndMutateUtil {
     }
 
     public RequestBuilder withPut(Put put) throws DoNotRetryIOException {
-      return addMutations(put.getRow(), hbaseAdapter.adapt(put).getMutationsList());
+      adaptException(put.getRow());
+      hbaseAdapter.adapt(put);//.getMutationsList()
+      return this;
+      //return addMutations(put.getRow(), hbaseAdapter.adapt(put).getMutationsList());
     }
 
     public RequestBuilder withDelete(Delete delete) throws DoNotRetryIOException {
-      return addMutations(delete.getRow(), hbaseAdapter.adapt(delete).getMutationsList());
+      adaptException(delete.getRow());
+      hbaseAdapter.adapt(delete, mutations);
+      return this;
     }
 
     public RequestBuilder withMutations(RowMutations rm) throws DoNotRetryIOException {
-      return addMutations(rm.getRow(), hbaseAdapter.adapt(rm).getMutationsList());
+      adaptException(rm.getRow());
+      hbaseAdapter.adapt(rm);//.getMutationsList();
+      return this;
+      //return addMutations(rm.getRow(), hbaseAdapter.adapt(rm).getMutationsList());
     }
 
-    private RequestBuilder addMutations(byte[] actionRow, List<Mutation> mutations) throws DoNotRetryIOException {
+//    private RequestBuilder addMutations(byte[] actionRow, List<Mutation> mutations) throws DoNotRetryIOException {
+//      if (!Arrays.equals(actionRow, row)) {
+//        // The following odd exception message is for compatibility with HBase.
+//        throw new DoNotRetryIOException("Action's getRow must match the passed row");
+//      }
+//      this.mutations.addAll(mutations);
+//      return this;
+//    }
+
+    private void adaptException(byte[] actionRow) throws DoNotRetryIOException {
+      Class<? extends byte[]> aClass = actionRow.getClass();
       if (!Arrays.equals(actionRow, row)) {
         // The following odd exception message is for compatibility with HBase.
         throw new DoNotRetryIOException("Action's getRow must match the passed row");
       }
-      this.mutations.addAll(mutations);
-      return this;
     }
 
-    public CheckAndMutateRowRequest build() {
+    public ConditionalRowMutation build() {
       Preconditions.checkState(checkNonExistence || compareOp != null,
           "condition is null. You need to specify the condition by" +
           " calling ifNotExists/ifEquals/ifMatches before executing the request");
-
+      ConditionalRowMutation conditionalRowMutation = ConditionalRowMutation.create("", ByteString.copyFromUtf8(""));
       Scan scan = new Scan();
       scan.setMaxVersions(1);
       scan.addColumn(family, qualifier);
@@ -210,10 +226,10 @@ public class CheckAndMutateUtil {
         // See ifMatches javadoc for more information on this
         if (CompareOp.NOT_EQUAL.equals(compareOp)) {
           // check for existence
-          requestBuilder.addAllTrueMutations(mutations);
+          conditionalRowMutation.then(mutations);
         } else {
           // check for non-existence
-          requestBuilder.addAllFalseMutations(mutations);
+          conditionalRowMutation.otherwise(mutations);
         }
         if (timeFilter != null) {
           scan.setFilter(timeFilter);
@@ -226,12 +242,11 @@ public class CheckAndMutateUtil {
         } else {
           scan.setFilter(valueFilter);
         }
-        requestBuilder.addAllTrueMutations(mutations);
+        conditionalRowMutation.then(mutations);
       }
-      requestBuilder.setPredicateFilter(
-          Adapters.SCAN_ADAPTER.buildFilter(scan, UNSUPPORTED_READ_HOOKS));
+      conditionalRowMutation.condition(Adapters.SCAN_ADAPTER.buildModelFilter(scan, UNSUPPORTED_READ_HOOKS));
 
-      return requestBuilder.build();
+      return conditionalRowMutation;
     }
   }
 

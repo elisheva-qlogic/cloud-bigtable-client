@@ -15,6 +15,9 @@
  */
 package com.google.cloud.bigtable.hbase;
 
+import com.google.cloud.bigtable.core.IBigtableDataClient;
+import com.google.cloud.bigtable.data.v2.models.ConditionalRowMutation;
+import com.google.cloud.bigtable.data.v2.models.RowMutation;
 import io.opencensus.common.Scope;
 import io.opencensus.trace.Status;
 import java.io.IOException;
@@ -113,6 +116,7 @@ public abstract class AbstractBigtableTable implements Table {
   protected final HBaseRequestAdapter hbaseAdapter;
 
   protected final BigtableDataClient client;
+  protected final IBigtableDataClient clientWrapper;
   private BatchExecutor batchExecutor;
   protected final AbstractBigtableConnection bigtableConnection;
   private TableMetrics metrics = new TableMetrics();
@@ -129,6 +133,7 @@ public abstract class AbstractBigtableTable implements Table {
     BigtableSession session = bigtableConnection.getSession();
     this.options = session.getOptions();
     this.client = session.getDataClient();
+    this.clientWrapper = session.getClientWrapper();
     this.hbaseAdapter = hbaseAdapter;
     this.tableName = hbaseAdapter.getTableName();
   }
@@ -386,7 +391,7 @@ public abstract class AbstractBigtableTable implements Table {
   public boolean checkAndPut(byte[] row, byte[] family, byte[] qualifier,
       CompareFilter.CompareOp compareOp, byte[] value, Put put) throws IOException {
     LOG.trace("checkAndPut(byte[], byte[], byte[], CompareOp, value, Put)");
-    CheckAndMutateRowRequest request =
+    ConditionalRowMutation request =
         new CheckAndMutateUtil.RequestBuilder(hbaseAdapter, row, family)
             .qualifier(qualifier)
             .ifMatches(compareOp, value)
@@ -402,8 +407,8 @@ public abstract class AbstractBigtableTable implements Table {
     LOG.trace("delete(Delete)");
     Span span = TRACER.spanBuilder("BigtableTable.delete").startSpan();
     try (Scope scope = TRACER.withSpan(span)) {
-      MutateRowRequest request = hbaseAdapter.adapt(delete);
-      client.mutateRow(request);
+      RowMutation rowMutation = hbaseAdapter.adapt(delete);
+      clientWrapper.mutateRow(rowMutation);
     } catch (Throwable t) {
       span.setStatus(Status.UNKNOWN);
       throw logAndCreateIOException("delete", delete.getRow(), t);
@@ -433,7 +438,7 @@ public abstract class AbstractBigtableTable implements Table {
   public boolean checkAndDelete(byte[] row, byte[] family, byte[] qualifier,
       CompareFilter.CompareOp compareOp, byte[] value, Delete delete) throws IOException {
     LOG.trace("checkAndDelete(byte[], byte[], byte[], CompareOp, byte[], Delete)");
-    CheckAndMutateRowRequest request =
+    ConditionalRowMutation request =
         new CheckAndMutateUtil.RequestBuilder(hbaseAdapter, row, family)
             .qualifier(qualifier)
             .ifMatches(compareOp, value)
@@ -451,7 +456,7 @@ public abstract class AbstractBigtableTable implements Table {
       throws IOException {
     LOG.trace("checkAndMutate(byte[], byte[], byte[], CompareOp, byte[], RowMutations)");
 
-    CheckAndMutateRowRequest request =
+    ConditionalRowMutation request =
         new CheckAndMutateUtil.RequestBuilder(hbaseAdapter, row, family)
             .qualifier(qualifier)
             .ifMatches(compareOp, value)
@@ -461,12 +466,11 @@ public abstract class AbstractBigtableTable implements Table {
     return checkAndMutate(row, request, "checkAndMutate");
   }
 
-  private boolean checkAndMutate(final byte[] row, CheckAndMutateRowRequest request, String type)
+  private boolean checkAndMutate(final byte[] row, ConditionalRowMutation request, String type)
       throws IOException {
     Span span = TRACER.spanBuilder("BigtableTable." + type).startSpan();
     try (Scope scope = TRACER.withSpan(span)) {
-      CheckAndMutateRowResponse response = client.checkAndMutateRow(request);
-      return CheckAndMutateUtil.wasMutationApplied(request, response);
+      return clientWrapper.checkAndMutateRow(request);
     } catch (Throwable t) {
       span.setStatus(Status.UNKNOWN);
       throw logAndCreateIOException(type, row, t);
