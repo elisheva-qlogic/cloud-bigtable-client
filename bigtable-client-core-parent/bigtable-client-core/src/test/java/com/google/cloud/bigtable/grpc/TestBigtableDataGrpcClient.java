@@ -90,9 +90,13 @@ public class TestBigtableDataGrpcClient {
 
   protected BigtableDataGrpcClient createClient(boolean allowRetriesWithoutTimestamp) {
     RetryOptions retryOptions = RetryOptions.builder()
-            .setAllowRetriesWithoutTimestamp(allowRetriesWithoutTimestamp).build();
-    BigtableOptions options = BigtableOptions.builder().setRetryOptions(retryOptions).build();
-    doAnswer(new Answer<Void>(){
+        .setAllowRetriesWithoutTimestamp(allowRetriesWithoutTimestamp).build();
+    BigtableOptions options = BigtableOptions.builder()
+        .setRetryOptions(retryOptions)
+        .setProjectId("projectId")
+        .setInstanceId("instanceId")
+        .build();
+    doAnswer(new Answer<Void>() {
       @Override
       public Void answer(InvocationOnMock invocation) throws Throwable {
         checkHeader(invocation.getArgumentAt(1, Metadata.class));
