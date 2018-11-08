@@ -114,7 +114,7 @@ public abstract class AbstractBigtableTable implements Table {
   protected final HBaseRequestAdapter hbaseAdapter;
 
   protected final BigtableDataClient client;
-  protected final IBigtableDataClient clientWrapper;
+  protected final IBigtableDataClient bigtableDataClient;
   private BatchExecutor batchExecutor;
   protected final AbstractBigtableConnection bigtableConnection;
   private TableMetrics metrics = new TableMetrics();
@@ -131,7 +131,7 @@ public abstract class AbstractBigtableTable implements Table {
     BigtableSession session = bigtableConnection.getSession();
     this.options = session.getOptions();
     this.client = session.getDataClient();
-    this.clientWrapper = session.getClientWrapper();
+    this.bigtableDataClient = session.getBigtableDataClient();
     this.hbaseAdapter = hbaseAdapter;
     this.tableName = hbaseAdapter.getTableName();
   }
@@ -406,7 +406,7 @@ public abstract class AbstractBigtableTable implements Table {
     Span span = TRACER.spanBuilder("BigtableTable.delete").startSpan();
     try (Scope scope = TRACER.withSpan(span)) {
       RowMutation rowMutation = hbaseAdapter.adapt(delete);
-      clientWrapper.mutateRow(rowMutation);
+      bigtableDataClient.mutateRow(rowMutation);
     } catch (Throwable t) {
       span.setStatus(Status.UNKNOWN);
       throw logAndCreateIOException("delete", delete.getRow(), t);
@@ -468,7 +468,7 @@ public abstract class AbstractBigtableTable implements Table {
       throws IOException {
     Span span = TRACER.spanBuilder("BigtableTable." + type).startSpan();
     try (Scope scope = TRACER.withSpan(span)) {
-      return clientWrapper.checkAndMutateRow(request);
+      return bigtableDataClient.checkAndMutateRow(request);
     } catch (Throwable t) {
       span.setStatus(Status.UNKNOWN);
       throw logAndCreateIOException(type, row, t);

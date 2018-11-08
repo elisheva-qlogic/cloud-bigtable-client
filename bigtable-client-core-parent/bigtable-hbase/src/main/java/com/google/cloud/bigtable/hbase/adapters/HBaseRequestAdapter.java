@@ -137,7 +137,8 @@ public class HBaseRequestAdapter {
    * @return a {@link RowMutation} object.
    */
   public RowMutation adapt(Delete delete) {
-    RowMutation rowMutation = RowMutation.create(bigtableTableName.getTableId(), ByteString.copyFrom(delete.getRow()));
+    RowMutation rowMutation = RowMutation
+        .create(bigtableTableName.getTableId(), ByteString.copyFrom(delete.getRow()));
     Adapters.DELETE_ADAPTER.adapt(delete, rowMutation);
     return rowMutation;
   }
